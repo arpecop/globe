@@ -42,7 +42,7 @@ impl Default for Config {
                     "node1.globy.io:3000".to_string(),
                     "node2.globy.io:3000".to_string(),
                 ],
-                handshake_url: "https://globy-handshake.workers.dev".to_string(),
+                handshake_url: "https://globy-handshake.rudix.workers.dev".to_string(),
             },
             crypto: CryptoConfig {
                 hash_algorithm: "sha256".to_string(),

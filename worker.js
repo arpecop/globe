@@ -8,8 +8,8 @@
 // Format: { channel_name: [{ip, port, timestamp}] }
 let peerRegistry = new Map();
 
-// Clean up stale peers every 60 seconds
-setInterval(() => {
+// Helper: Clean up stale peers
+function cleanupStalePeers() {
   const now = Date.now();
   const PEER_TIMEOUT = 300000; // 5 minutes
 
@@ -21,10 +21,13 @@ setInterval(() => {
       peerRegistry.set(channel, alive);
     }
   }
-}, 60000);
+}
 
 export default {
   async fetch(request) {
+    // Clean up stale peers on every request
+    cleanupStalePeers();
+
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;

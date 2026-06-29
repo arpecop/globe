@@ -1,23 +1,6 @@
 name = "globy-handshake"
-type = "javascript"
 main = "worker.js"
 compatibility_date = "2024-06-29"
 
-[env.production]
-name = "globy-handshake"
-routes = [
-  { pattern = "globy-handshake.workers.dev/*" }
-]
-
-# Workers free tier settings
-[limits]
-cpu_ms = 50
-
-# CORS
 [build]
 command = "echo 'No build needed'"
-
-# Environment variables (optional)
-[env.production.vars]
-LOG_LEVEL = "info"
-PEER_TIMEOUT = "300000"
