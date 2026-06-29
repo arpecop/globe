@@ -266,6 +266,7 @@ fn draw_messages(f: &mut Frame, state: &AppState, area: Rect) {
     // Show only the last N messages that fit on screen
     let start_idx = state.messages.len().saturating_sub(max_visible);
     let visible_messages = state.messages.iter().skip(start_idx).collect::<Vec<_>>();
+    let msg_count = visible_messages.len();
 
     // Create message list (from oldest to newest visible)
     let messages: Vec<ListItem> = visible_messages
@@ -289,8 +290,8 @@ fn draw_messages(f: &mut Frame, state: &AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),              // Padding (pushes down)
-            Constraint::Length(messages.len() as u16),  // Messages at bottom
+            Constraint::Min(0),                          // Padding (pushes down)
+            Constraint::Length(msg_count as u16),        // Messages at bottom
         ])
         .split(area);
 
