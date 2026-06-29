@@ -14,17 +14,30 @@ use crate::ssh_key::{SshIdentity, NicknameDatabase};
 pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
     let nickname = nickname.unwrap_or_else(|| "User".to_string());
 
-    // Load SSH identity (from ~/.ssh/id_ed25519)
-    let identity = SshIdentity::new()?;
-    let peer_hash = identity.get_peer_hash()?;
+    // Load SSH identity (from ~/.ssh/id_ed25519) or generate temp ID
+    let peer_hash = match SshIdentity::new() {
+        Ok(identity) => {
+            println!("🔑 SSH Key loaded");
+            identity.get_peer_hash()?
+        }
+        Err(_) => {
+            // No SSH key, generate temporary ID
+            use sha2::{Sha256, Digest};
+            use hex::encode;
+            let input = format!("temp_{}", uuid::Uuid::new_v4());
+            let mut hasher = Sha256::new();
+            hasher.update(input.as_bytes());
+            let result = hasher.finalize();
+            let hex = encode(result);
+            format!("0x{}", &hex[0..8])
+        }
+    };
 
     // Load nickname database (stores local mapping)
     let db = NicknameDatabase::new()?;
     db.set(&peer_hash, &nickname)?;
 
     println!("👤 Nickname: {} ({})", nickname, peer_hash);
-    println!("🔑 SSH Key loaded");
-    println!("🌐 Connecting to: {}", connect);
     println!("📺 Starting TUI...");
 
     // Setup terminal
