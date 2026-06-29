@@ -261,9 +261,14 @@ fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
 }
 
 fn draw_messages(f: &mut Frame, state: &AppState, area: Rect) {
-    // Create message list
-    let messages: Vec<ListItem> = state
-        .messages
+    let max_visible = area.height.saturating_sub(1) as usize;
+
+    // Show only the last N messages that fit on screen
+    let start_idx = state.messages.len().saturating_sub(max_visible);
+    let visible_messages = state.messages.iter().skip(start_idx).collect::<Vec<_>>();
+
+    // Create message list (from oldest to newest visible)
+    let messages: Vec<ListItem> = visible_messages
         .iter()
         .map(|m| {
             let text = if m.from == state.peer_hash {
@@ -280,7 +285,16 @@ fn draw_messages(f: &mut Frame, state: &AppState, area: Rect) {
     let list = List::new(messages)
         .style(Style::default());
 
-    f.render_widget(list, area);
+    // Layout: add padding at top to push messages to bottom
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),              // Padding (pushes down)
+            Constraint::Length(messages.len() as u16),  // Messages at bottom
+        ])
+        .split(area);
+
+    f.render_widget(list, chunks[1]);
 }
 
 fn draw_input(f: &mut Frame, state: &AppState, area: Rect) {
