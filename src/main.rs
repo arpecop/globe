@@ -78,17 +78,24 @@ async fn main() -> Result<()> {
     }
 
     match cli.command {
-        Commands::Serve { salt, port, mode } => {
+        Commands::Serve { salt: _, port, mode: _ } => {
             println!("🚀 Starting Globy Server");
             println!("📡 Port: {}", port);
-            println!("🔐 Mode: {}", mode);
 
             let config = Config::load_or_default(&cli.config)?;
-            let salt = salt.unwrap_or_else(|| config.server.salt_hash.clone());
 
-            println!("🔑 Salt: {}", salt);
+            // Get or prompt for nickname
+            let nickname = std::env::var("GLOBY_NICKNAME")
+                .unwrap_or_else(|_| {
+                    println!("👤 Enter your nickname: ");
+                    let mut input = String::new();
+                    std::io::stdin().read_line(&mut input).ok();
+                    input.trim().to_string()
+                });
 
-            server::run(config, port, &mode).await?;
+            println!("👤 Nickname: {}", nickname);
+
+            server::run(config, port, nickname).await?;
         }
         Commands::Cli { connect, nickname } => {
             println!("🌐 Connecting to {}", connect);

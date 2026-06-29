@@ -1,77 +1,93 @@
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap, Gauge},
 };
 use std::collections::VecDeque;
 
 pub struct Message {
     pub from: String,
     pub content: String,
-    pub timestamp: u64,
 }
 
 pub struct AppState {
     pub nickname: String,
-    pub user_id: String,
+    pub peer_hash: String,
     pub current_channel: String,
     pub channels: Vec<String>,
     pub messages: VecDeque<Message>,
     pub input: String,
-    pub channel_list_state: usize,
-    pub scroll_offset: usize,
+    pub input_cursor: usize,
 }
 
 impl AppState {
-    pub fn new(nickname: String, user_id: String) -> Self {
+    pub fn new(nickname: String, peer_hash: String) -> Self {
         Self {
             nickname,
-            user_id,
+            peer_hash,
             current_channel: "general".to_string(),
             channels: vec!["general".to_string(), "dev".to_string(), "random".to_string()],
             messages: VecDeque::new(),
             input: String::new(),
-            channel_list_state: 0,
-            scroll_offset: 0,
+            input_cursor: 0,
         }
     }
 
     pub fn add_message(&mut self, from: String, content: String) {
-        self.messages.push_back(Message {
-            from,
-            content,
-            timestamp: chrono::Utc::now().timestamp() as u64,
-        });
-        if self.messages.len() > 100 {
+        self.messages.push_back(Message { from, content });
+        if self.messages.len() > 500 {
             self.messages.pop_front();
         }
     }
 
     pub fn handle_input(&mut self, c: char) {
-        self.input.push(c);
+        self.input.insert(self.input_cursor, c);
+        self.input_cursor += 1;
     }
 
     pub fn handle_backspace(&mut self) {
-        self.input.pop();
+        if self.input_cursor > 0 {
+            self.input.remove(self.input_cursor - 1);
+            self.input_cursor -= 1;
+        }
+    }
+
+    pub fn handle_delete(&mut self) {
+        if self.input_cursor < self.input.len() {
+            self.input.remove(self.input_cursor);
+        }
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.input_cursor > 0 {
+            self.input_cursor -= 1;
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        if self.input_cursor < self.input.len() {
+            self.input_cursor += 1;
+        }
     }
 
     pub fn send_message(&mut self) {
         if !self.input.trim().is_empty() {
-            self.add_message(self.user_id.clone(), self.input.clone());
+            self.add_message(self.peer_hash.clone(), self.input.clone());
             self.input.clear();
+            self.input_cursor = 0;
         }
     }
 
-    pub fn select_next_channel(&mut self) {
-        if self.channel_list_state < self.channels.len() - 1 {
-            self.channel_list_state += 1;
-            self.current_channel = self.channels[self.channel_list_state].clone();
+    pub fn next_channel(&mut self) {
+        let idx = self.channels.iter().position(|c| c == &self.current_channel).unwrap_or(0);
+        if idx < self.channels.len() - 1 {
+            self.current_channel = self.channels[idx + 1].clone();
         }
     }
 
-    pub fn select_prev_channel(&mut self) {
-        if self.channel_list_state > 0 {
-            self.channel_list_state -= 1;
-            self.current_channel = self.channels[self.channel_list_state].clone();
+    pub fn prev_channel(&mut self) {
+        let idx = self.channels.iter().position(|c| c == &self.current_channel).unwrap_or(0);
+        if idx > 0 {
+            self.current_channel = self.channels[idx - 1].clone();
         }
     }
 }
@@ -79,82 +95,99 @@ impl AppState {
 pub fn draw_ui(f: &mut Frame, state: &AppState) {
     let size = f.size();
 
-    // Main layout: channels (left) | messages (center) | users (right)
+    // Layout: header | messages (scrollable) | input (fixed)
     let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(20), Constraint::Min(40), Constraint::Length(15)])
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),           // Header
+            Constraint::Min(5),              // Messages (scrollable)
+            Constraint::Length(4),           // Input (fixed at bottom)
+        ])
         .split(size);
 
-    // Left panel: Channels
-    draw_channels(f, state, chunks[0]);
+    // Header
+    draw_header(f, state, chunks[0]);
 
-    // Center panel: Messages
+    // Messages (scrollable)
     draw_messages(f, state, chunks[1]);
 
-    // Right panel: Users & Info
-    draw_info(f, state, chunks[2]);
+    // Input (fixed at bottom, like Claude Code)
+    draw_input(f, state, chunks[2]);
 }
 
-fn draw_channels(f: &mut Frame, state: &AppState, area: Rect) {
+fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
     let channels = state
         .channels
         .iter()
-        .map(|c| {
-            let prefix = if c == &state.current_channel { "▶" } else { " " };
-            ListItem::new(format!("{} #{}", prefix, c))
+        .enumerate()
+        .map(|(i, c)| {
+            let marker = if c == &state.current_channel { "●" } else { "○" };
+            format!(" {} #{}", marker, c)
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+        .join("  ");
 
-    let list = List::new(channels)
-        .block(Block::default().title("Channels").borders(Borders::ALL))
+    let header = Paragraph::new(format!(
+        " {} | {} \n {}",
+        state.nickname, state.peer_hash, channels
+    ))
+    .block(Block::default().borders(Borders::BOTTOM))
+    .style(Style::default().fg(Color::Cyan));
+
+    f.render_widget(header, area);
+}
+
+fn draw_messages(f: &mut Frame, state: &AppState, area: Rect) {
+    // Create message list
+    let messages: Vec<ListItem> = state
+        .messages
+        .iter()
+        .map(|m| {
+            let text = if m.from == state.peer_hash {
+                // Your message (highlighted)
+                format!("  {} (you): {}", m.from, m.content)
+            } else {
+                // Other's message
+                format!("  {}: {}", m.from, m.content)
+            };
+            ListItem::new(text)
+        })
+        .collect();
+
+    let list = List::new(messages)
+        .block(Block::default().borders(Borders::NONE))
         .style(Style::default());
 
     f.render_widget(list, area);
 }
 
-fn draw_messages(f: &mut Frame, state: &AppState, area: Rect) {
-    let message_area = Layout::default()
+fn draw_input(f: &mut Frame, state: &AppState, area: Rect) {
+    let input_lines = state.input.lines().count().max(1);
+    let input_height = input_lines.min(5); // Max 5 lines
+
+    let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(3)])
+        .constraints([Constraint::Min(0), Constraint::Length(input_height as u16)])
         .split(area);
 
-    // Messages list
-    let messages = state
-        .messages
-        .iter()
-        .map(|m| {
-            let text = format!("{}: {}", m.from, m.content);
-            ListItem::new(text)
-        })
-        .collect::<Vec<_>>();
+    let input_area = chunks[1];
 
-    let list = List::new(messages)
+    // Draw cursor position
+    let cursor_pos = state.input_cursor;
+    let display_input = if cursor_pos <= state.input.len() {
+        format!("{}│{}", &state.input[0..cursor_pos], &state.input[cursor_pos..])
+    } else {
+        format!("{}│", state.input)
+    };
+
+    let input_widget = Paragraph::new(display_input)
         .block(
             Block::default()
-                .title(format!("#{}", state.current_channel))
-                .borders(Borders::ALL),
+                .title(" Message ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Green))
         )
-        .style(Style::default());
+        .wrap(Wrap { trim: false });
 
-    f.render_widget(list, message_area[0]);
-
-    // Input box
-    let input_text = Paragraph::new(state.input.clone())
-        .block(Block::default().title("You").borders(Borders::ALL))
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(input_text, message_area[1]);
-}
-
-fn draw_info(f: &mut Frame, state: &AppState, area: Rect) {
-    let info_text = format!(
-        "User: {}\n{}\nPeers: 42\nHosting: 18",
-        state.user_id, state.nickname
-    );
-
-    let widget = Paragraph::new(info_text)
-        .block(Block::default().title("Info").borders(Borders::ALL))
-        .alignment(Alignment::Left);
-
-    f.render_widget(widget, area);
+    f.render_widget(input_widget, input_area);
 }

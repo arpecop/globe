@@ -50,9 +50,12 @@ pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
                     KeyCode::Esc => break,
                     KeyCode::Enter => state.send_message(),
                     KeyCode::Backspace => state.handle_backspace(),
+                    KeyCode::Delete => state.handle_delete(),
+                    KeyCode::Left => state.move_cursor_left(),
+                    KeyCode::Right => state.move_cursor_right(),
+                    KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.prev_channel(),
+                    KeyCode::Down if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.next_channel(),
                     KeyCode::Char(c) => state.handle_input(c),
-                    KeyCode::Up => state.select_prev_channel(),
-                    KeyCode::Down => state.select_next_channel(),
                     _ => {}
                 }
             }
