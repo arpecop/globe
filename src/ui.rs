@@ -199,13 +199,11 @@ fn draw_chat(f: &mut Frame, state: &AppState) {
 fn draw_peer_selection(f: &mut Frame, state: &AppState) {
     let size = f.size();
 
-    // Create peer input display with cursor
-    let cursor_pos = state.peer_input_cursor;
-    let display_input = if cursor_pos <= state.peer_input.len() {
-        format!("{}│{}", &state.peer_input[0..cursor_pos], &state.peer_input[cursor_pos..])
-    } else {
-        format!("{}│", state.peer_input)
-    };
+    // Create peer input display with cursor (handle UTF-8 properly)
+    let cursor_char_pos = state.peer_input_cursor.min(state.peer_input.chars().count());
+    let before_cursor: String = state.peer_input.chars().take(cursor_char_pos).collect();
+    let after_cursor: String = state.peer_input.chars().skip(cursor_char_pos).collect();
+    let display_input = format!("{}│{}", before_cursor, after_cursor);
 
     // Recent peers list
     let peers_list = state
@@ -308,13 +306,11 @@ fn draw_input(f: &mut Frame, state: &AppState, area: Rect) {
         ])
         .split(area);
 
-    // Draw cursor with text (NO BOX)
-    let cursor_pos = state.input_cursor;
-    let display_input = if cursor_pos <= state.input.len() {
-        format!("{}│{}", &state.input[0..cursor_pos], &state.input[cursor_pos..])
-    } else {
-        format!("{}│", state.input)
-    };
+    // Draw cursor with text (NO BOX) - handle UTF-8 properly
+    let cursor_char_pos = state.input_cursor.min(state.input.chars().count());
+    let before_cursor: String = state.input.chars().take(cursor_char_pos).collect();
+    let after_cursor: String = state.input.chars().skip(cursor_char_pos).collect();
+    let display_input = format!("{}│{}", before_cursor, after_cursor);
 
     let input_widget = Paragraph::new(display_input)
         .style(Style::default().fg(Color::Green));
