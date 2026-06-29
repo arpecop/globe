@@ -1,0 +1,53 @@
+[package]
+name = "globy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Web/HTTP
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# WebSocket
+tokio-tungstenite = "0.21"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+toml = "0.8"
+
+# Crypto
+sha2 = "0.10"
+ed25519-dalek = "2"
+x25519-dalek = "2"
+chacha20poly1305 = "0.10"
+rand = "0.8"
+hex = "0.4"
+
+# TUI
+ratatui = "0.26"
+crossterm = "0.27"
+
+# Utilities
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = "0.4"
+parking_lot = "0.12"
+dashmap = "5"
+
+# For machine ID
+machine-id = "0.3"
+
+[[bin]]
+name = "globy"
+path = "src/main.rs"
