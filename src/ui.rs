@@ -172,13 +172,17 @@ pub fn draw_ui(f: &mut Frame, state: &AppState) {
 fn draw_chat(f: &mut Frame, state: &AppState) {
     let size = f.size();
 
-    // Layout: header | messages (scrollable) | padding | input (no box)
+    // Calculate input height (message lines + padding)
+    let input_lines = state.input.lines().count().max(1);
+    let input_height = (input_lines + 1).min(4); // Max 4 lines for input
+
+    // Layout: header | messages | input (calculated)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),           // Header (compact)
-            Constraint::Min(8),              // Messages (scrollable)
-            Constraint::Length(3),           // Input area (padding + input, no box)
+            Constraint::Length(1),                          // Header (minimal)
+            Constraint::Min(5),                             // Messages (fill)
+            Constraint::Length(input_height as u16 + 1),    // Input (calculated)
         ])
         .split(size);
 
@@ -188,7 +192,7 @@ fn draw_chat(f: &mut Frame, state: &AppState) {
     // Messages (scrollable)
     draw_messages(f, state, chunks[1]);
 
-    // Input (NO BOX, just text floating)
+    // Input (NO BOX, calculated position)
     draw_input(f, state, chunks[2]);
 }
 
@@ -212,10 +216,8 @@ fn draw_peer_selection(f: &mut Frame, state: &AppState) {
         .join("\n");
 
     let dialog_text = format!(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
-         YOUR PEER ID (share with guests):\n\
+        "YOUR PEER ID (share with guests):\n\
          ▶ {}\n\n\
-         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n\
          Enter peer hash to connect to:\n\
          {}\n\n\
          Recent peers:\n\
@@ -248,9 +250,9 @@ fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
             format!("{}#{}", marker, c)
         })
         .collect::<Vec<_>>()
-        .join("  ");
+        .join(" ");
 
-    let header_text = format!("{} | {}  [{}]", state.nickname, state.peer_hash, channels);
+    let header_text = format!("{} | {}  {}", state.nickname, state.peer_hash, channels);
 
     let header = Paragraph::new(header_text)
         .style(Style::default().fg(Color::Cyan));
