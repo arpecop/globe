@@ -50,9 +50,12 @@ pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
                     crate::ui::Screen::PeerSelection => {
                         match key.code {
                             KeyCode::Esc => break,
-                            KeyCode::Up => state.select_prev_peer(),
-                            KeyCode::Down => state.select_next_peer(),
                             KeyCode::Enter => state.confirm_peer(),
+                            KeyCode::Backspace => state.peer_input_backspace(),
+                            KeyCode::Delete => state.peer_input_delete(),
+                            KeyCode::Left => state.peer_input_left(),
+                            KeyCode::Right => state.peer_input_right(),
+                            KeyCode::Char(c) => state.peer_input_char(c),
                             _ => {}
                         }
                     }

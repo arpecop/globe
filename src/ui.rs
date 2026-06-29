@@ -23,13 +23,14 @@ pub struct AppState {
     pub input: String,
     pub input_cursor: usize,
     pub screen: Screen,
-    pub known_peers: Vec<String>,  // List of peer hashes we know
-    pub selected_peer: usize,       // Index in known_peers
+    pub peer_input: String,          // Input for peer selection
+    pub peer_input_cursor: usize,
+    pub known_peers: Vec<String>,    // Recent peers
 }
 
 impl AppState {
     pub fn new(nickname: String, peer_hash: String) -> Self {
-        // Demo peers
+        // Recent/known peers
         let known_peers = vec![
             "0x7e81fc64".to_string(),
             "0xabcd1234".to_string(),
@@ -45,25 +46,47 @@ impl AppState {
             input: String::new(),
             input_cursor: 0,
             screen: Screen::PeerSelection,
+            peer_input: String::new(),
+            peer_input_cursor: 0,
             known_peers,
-            selected_peer: 0,
         }
     }
 
-    pub fn select_next_peer(&mut self) {
-        if self.selected_peer < self.known_peers.len() - 1 {
-            self.selected_peer += 1;
+    // Peer selection input handling
+    pub fn peer_input_char(&mut self, c: char) {
+        self.peer_input.insert(self.peer_input_cursor, c);
+        self.peer_input_cursor += 1;
+    }
+
+    pub fn peer_input_backspace(&mut self) {
+        if self.peer_input_cursor > 0 {
+            self.peer_input.remove(self.peer_input_cursor - 1);
+            self.peer_input_cursor -= 1;
         }
     }
 
-    pub fn select_prev_peer(&mut self) {
-        if self.selected_peer > 0 {
-            self.selected_peer -= 1;
+    pub fn peer_input_delete(&mut self) {
+        if self.peer_input_cursor < self.peer_input.len() {
+            self.peer_input.remove(self.peer_input_cursor);
+        }
+    }
+
+    pub fn peer_input_left(&mut self) {
+        if self.peer_input_cursor > 0 {
+            self.peer_input_cursor -= 1;
+        }
+    }
+
+    pub fn peer_input_right(&mut self) {
+        if self.peer_input_cursor < self.peer_input.len() {
+            self.peer_input_cursor += 1;
         }
     }
 
     pub fn confirm_peer(&mut self) {
-        self.screen = Screen::Chat;
+        if !self.peer_input.trim().is_empty() {
+            self.screen = Screen::Chat;
+        }
     }
 
     pub fn back_to_peers(&mut self) {
@@ -165,30 +188,35 @@ fn draw_chat(f: &mut Frame, state: &AppState) {
 fn draw_peer_selection(f: &mut Frame, state: &AppState) {
     let size = f.size();
 
-    let dialog = Paragraph::new(format!(
-        "Who do you want to chat with?\n\n{}",
-        state
-            .known_peers
-            .iter()
-            .enumerate()
-            .map(|(i, peer)| {
-                if i == state.selected_peer {
-                    format!("▶ {}", peer)
-                } else {
-                    format!("  {}", peer)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    ))
-    .alignment(Alignment::Center)
-    .style(Style::default().fg(Color::Yellow));
+    // Create peer input display with cursor
+    let cursor_pos = state.peer_input_cursor;
+    let display_input = if cursor_pos <= state.peer_input.len() {
+        format!("{}│{}", &state.peer_input[0..cursor_pos], &state.peer_input[cursor_pos..])
+    } else {
+        format!("{}│", state.peer_input)
+    };
+
+    // Recent peers list
+    let peers_list = state
+        .known_peers
+        .iter()
+        .map(|p| format!("  {}", p))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let dialog_text = format!(
+        "Enter peer hash to connect to (paste or type):\n\n{}\n\nRecent peers:\n{}",
+        display_input, peers_list
+    );
+
+    let dialog = Paragraph::new(dialog_text)
+        .style(Style::default().fg(Color::Green));
 
     let centered = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(10),
+            Constraint::Length(14),
             Constraint::Min(0),
         ])
         .split(size);
