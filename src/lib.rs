@@ -5,3 +5,5 @@ pub mod server;
 pub mod client;
 pub mod ui;
 pub mod handshake;
+pub mod ssh_key;
+pub mod pm;

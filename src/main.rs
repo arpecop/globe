@@ -9,6 +9,8 @@ mod server;
 mod client;
 mod ui;
 mod handshake;
+mod ssh_key;
+mod pm;
 
 use config::Config;
 
