@@ -9,6 +9,11 @@ pub struct Message {
     pub content: String,
 }
 
+pub enum Screen {
+    PeerSelection,
+    Chat,
+}
+
 pub struct AppState {
     pub nickname: String,
     pub peer_hash: String,
@@ -17,10 +22,20 @@ pub struct AppState {
     pub messages: VecDeque<Message>,
     pub input: String,
     pub input_cursor: usize,
+    pub screen: Screen,
+    pub known_peers: Vec<String>,  // List of peer hashes we know
+    pub selected_peer: usize,       // Index in known_peers
 }
 
 impl AppState {
     pub fn new(nickname: String, peer_hash: String) -> Self {
+        // Demo peers
+        let known_peers = vec![
+            "0x7e81fc64".to_string(),
+            "0xabcd1234".to_string(),
+            "0x5a2f9876".to_string(),
+        ];
+
         Self {
             nickname,
             peer_hash,
@@ -29,7 +44,32 @@ impl AppState {
             messages: VecDeque::new(),
             input: String::new(),
             input_cursor: 0,
+            screen: Screen::PeerSelection,
+            known_peers,
+            selected_peer: 0,
         }
+    }
+
+    pub fn select_next_peer(&mut self) {
+        if self.selected_peer < self.known_peers.len() - 1 {
+            self.selected_peer += 1;
+        }
+    }
+
+    pub fn select_prev_peer(&mut self) {
+        if self.selected_peer > 0 {
+            self.selected_peer -= 1;
+        }
+    }
+
+    pub fn confirm_peer(&mut self) {
+        self.screen = Screen::Chat;
+    }
+
+    pub fn back_to_peers(&mut self) {
+        self.screen = Screen::PeerSelection;
+        self.input.clear();
+        self.input_cursor = 0;
     }
 
     pub fn add_message(&mut self, from: String, content: String) {
@@ -93,46 +133,84 @@ impl AppState {
 }
 
 pub fn draw_ui(f: &mut Frame, state: &AppState) {
+    match state.screen {
+        Screen::PeerSelection => draw_peer_selection(f, state),
+        Screen::Chat => draw_chat(f, state),
+    }
+}
+
+fn draw_chat(f: &mut Frame, state: &AppState) {
     let size = f.size();
 
-    // Layout: header | messages (scrollable) | input (fixed)
+    // Layout: header | messages (scrollable) | padding | input (no box)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),           // Header
-            Constraint::Min(5),              // Messages (scrollable)
-            Constraint::Length(4),           // Input (fixed at bottom)
+            Constraint::Length(2),           // Header (compact)
+            Constraint::Min(8),              // Messages (scrollable)
+            Constraint::Length(3),           // Input area (padding + input, no box)
         ])
         .split(size);
 
-    // Header
+    // Header (compact, no box)
     draw_header(f, state, chunks[0]);
 
     // Messages (scrollable)
     draw_messages(f, state, chunks[1]);
 
-    // Input (fixed at bottom, like Claude Code)
+    // Input (NO BOX, just text floating)
     draw_input(f, state, chunks[2]);
+}
+
+fn draw_peer_selection(f: &mut Frame, state: &AppState) {
+    let size = f.size();
+
+    let dialog = Paragraph::new(format!(
+        "Who do you want to chat with?\n\n{}",
+        state
+            .known_peers
+            .iter()
+            .enumerate()
+            .map(|(i, peer)| {
+                if i == state.selected_peer {
+                    format!("▶ {}", peer)
+                } else {
+                    format!("  {}", peer)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    ))
+    .alignment(Alignment::Center)
+    .style(Style::default().fg(Color::Yellow));
+
+    let centered = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(10),
+            Constraint::Min(0),
+        ])
+        .split(size);
+
+    f.render_widget(dialog, centered[1]);
 }
 
 fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
     let channels = state
         .channels
         .iter()
-        .enumerate()
-        .map(|(i, c)| {
+        .map(|c| {
             let marker = if c == &state.current_channel { "●" } else { "○" };
-            format!(" {} #{}", marker, c)
+            format!("{}#{}", marker, c)
         })
         .collect::<Vec<_>>()
         .join("  ");
 
-    let header = Paragraph::new(format!(
-        " {} | {} \n {}",
-        state.nickname, state.peer_hash, channels
-    ))
-    .block(Block::default().borders(Borders::BOTTOM))
-    .style(Style::default().fg(Color::Cyan));
+    let header_text = format!("{} | {}  [{}]", state.nickname, state.peer_hash, channels);
+
+    let header = Paragraph::new(header_text)
+        .style(Style::default().fg(Color::Cyan));
 
     f.render_widget(header, area);
 }
@@ -144,35 +222,33 @@ fn draw_messages(f: &mut Frame, state: &AppState, area: Rect) {
         .iter()
         .map(|m| {
             let text = if m.from == state.peer_hash {
-                // Your message (highlighted)
-                format!("  {} (you): {}", m.from, m.content)
+                // Your message (subtle)
+                format!("{} (you): {}", m.from, m.content)
             } else {
                 // Other's message
-                format!("  {}: {}", m.from, m.content)
+                format!("{}: {}", m.from, m.content)
             };
             ListItem::new(text)
         })
         .collect();
 
     let list = List::new(messages)
-        .block(Block::default().borders(Borders::NONE))
         .style(Style::default());
 
     f.render_widget(list, area);
 }
 
 fn draw_input(f: &mut Frame, state: &AppState, area: Rect) {
-    let input_lines = state.input.lines().count().max(1);
-    let input_height = input_lines.min(5); // Max 5 lines
-
+    // Split into padding + input line
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(input_height as u16)])
+        .constraints([
+            Constraint::Length(1),           // Padding line
+            Constraint::Min(1),              // Input text (no box)
+        ])
         .split(area);
 
-    let input_area = chunks[1];
-
-    // Draw cursor position
+    // Draw cursor with text (NO BOX)
     let cursor_pos = state.input_cursor;
     let display_input = if cursor_pos <= state.input.len() {
         format!("{}│{}", &state.input[0..cursor_pos], &state.input[cursor_pos..])
@@ -181,13 +257,7 @@ fn draw_input(f: &mut Frame, state: &AppState, area: Rect) {
     };
 
     let input_widget = Paragraph::new(display_input)
-        .block(
-            Block::default()
-                .title(" Message ")
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Green))
-        )
-        .wrap(Wrap { trim: false });
+        .style(Style::default().fg(Color::Green));
 
-    f.render_widget(input_widget, input_area);
+    f.render_widget(input_widget, chunks[1]);
 }

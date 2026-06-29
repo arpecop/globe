@@ -46,17 +46,30 @@ pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Esc => break,
-                    KeyCode::Enter => state.send_message(),
-                    KeyCode::Backspace => state.handle_backspace(),
-                    KeyCode::Delete => state.handle_delete(),
-                    KeyCode::Left => state.move_cursor_left(),
-                    KeyCode::Right => state.move_cursor_right(),
-                    KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.prev_channel(),
-                    KeyCode::Down if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.next_channel(),
-                    KeyCode::Char(c) => state.handle_input(c),
-                    _ => {}
+                match state.screen {
+                    crate::ui::Screen::PeerSelection => {
+                        match key.code {
+                            KeyCode::Esc => break,
+                            KeyCode::Up => state.select_prev_peer(),
+                            KeyCode::Down => state.select_next_peer(),
+                            KeyCode::Enter => state.confirm_peer(),
+                            _ => {}
+                        }
+                    }
+                    crate::ui::Screen::Chat => {
+                        match key.code {
+                            KeyCode::Esc => state.back_to_peers(),
+                            KeyCode::Enter => state.send_message(),
+                            KeyCode::Backspace => state.handle_backspace(),
+                            KeyCode::Delete => state.handle_delete(),
+                            KeyCode::Left => state.move_cursor_left(),
+                            KeyCode::Right => state.move_cursor_right(),
+                            KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.next_channel(),
+                            KeyCode::Down if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.prev_channel(),
+                            KeyCode::Char(c) => state.handle_input(c),
+                            _ => {}
+                        }
+                    }
                 }
             }
         }

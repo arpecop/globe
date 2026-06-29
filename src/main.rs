@@ -11,6 +11,7 @@ mod ui;
 mod handshake;
 mod ssh_key;
 mod pm;
+mod api;
 
 use config::Config;
 

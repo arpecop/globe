@@ -7,3 +7,4 @@ pub mod ui;
 pub mod handshake;
 pub mod ssh_key;
 pub mod pm;
+pub mod api;
