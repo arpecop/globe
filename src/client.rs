@@ -63,8 +63,14 @@ pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
                 match state.screen {
                     crate::ui::Screen::PeerSelection => {
                         match key.code {
-                            KeyCode::Esc => break,
-                            KeyCode::Enter => state.confirm_peer(),
+                            KeyCode::Esc => {
+                                // Esc = start as HOST (wait for guests)
+                                state.start_as_host();
+                            }
+                            KeyCode::Enter => {
+                                // Enter = connect as GUEST (if peer entered)
+                                state.confirm_peer();
+                            }
                             KeyCode::Backspace => state.peer_input_backspace(),
                             KeyCode::Delete => state.peer_input_delete(),
                             KeyCode::Left => state.peer_input_left(),

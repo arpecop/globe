@@ -85,8 +85,15 @@ impl AppState {
 
     pub fn confirm_peer(&mut self) {
         if !self.peer_input.trim().is_empty() {
+            // Entered a peer hash -> connect as GUEST
             self.screen = Screen::Chat;
         }
+    }
+
+    pub fn start_as_host(&mut self) {
+        // No peer entered -> start as HOST (wait for guests)
+        self.screen = Screen::Chat;
+        self.peer_input = format!("(hosting as {})", self.peer_hash);
     }
 
     pub fn back_to_peers(&mut self) {
@@ -210,10 +217,10 @@ fn draw_peer_selection(f: &mut Frame, state: &AppState) {
          ▶ {}\n\n\
          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n\
          Enter peer hash to connect to:\n\
-         (paste host's ID or press Esc to wait)\n\n\
          {}\n\n\
          Recent peers:\n\
-         {}",
+         {}\n\n\
+         [Enter] Connect as guest | [Esc] Start as host (wait for guests)",
         state.peer_hash, display_input, peers_list
     );
 
