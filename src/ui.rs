@@ -200,23 +200,31 @@ fn draw_peer_selection(f: &mut Frame, state: &AppState) {
     let peers_list = state
         .known_peers
         .iter()
-        .map(|p| format!("  {}", p))
+        .map(|p| format!("  • {}", p))
         .collect::<Vec<_>>()
         .join("\n");
 
     let dialog_text = format!(
-        "Enter peer hash to connect to (paste or type):\n\n{}\n\nRecent peers:\n{}",
-        display_input, peers_list
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\
+         YOUR PEER ID (share with guests):\n\
+         ▶ {}\n\n\
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n\
+         Enter peer hash to connect to:\n\
+         (paste host's ID or press Esc to wait)\n\n\
+         {}\n\n\
+         Recent peers:\n\
+         {}",
+        state.peer_hash, display_input, peers_list
     );
 
     let dialog = Paragraph::new(dialog_text)
-        .style(Style::default().fg(Color::Green));
+        .style(Style::default().fg(Color::Cyan));
 
     let centered = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(14),
+            Constraint::Length(18),
             Constraint::Min(0),
         ])
         .split(size);

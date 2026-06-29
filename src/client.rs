@@ -37,8 +37,9 @@ pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
     let db = NicknameDatabase::new()?;
     db.set(&peer_hash, &nickname)?;
 
-    println!("👤 Nickname: {} ({})", nickname, peer_hash);
-    println!("📺 Starting TUI...");
+    println!("✅ Ready!");
+    println!("👤 Your name: {}", nickname);
+    println!("📺 Starting Globy...\n");
 
     // Setup terminal
     enable_raw_mode()?;
