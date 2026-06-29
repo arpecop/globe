@@ -19,6 +19,7 @@ pub struct ServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootstrapConfig {
     pub nodes: Vec<String>,
+    pub handshake_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +42,7 @@ impl Default for Config {
                     "node1.globy.io:3000".to_string(),
                     "node2.globy.io:3000".to_string(),
                 ],
+                handshake_url: "https://globy-handshake.workers.dev".to_string(),
             },
             crypto: CryptoConfig {
                 hash_algorithm: "sha256".to_string(),

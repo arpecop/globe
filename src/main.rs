@@ -8,6 +8,7 @@ mod protocol;
 mod server;
 mod client;
 mod ui;
+mod handshake;
 
 use config::Config;
 
