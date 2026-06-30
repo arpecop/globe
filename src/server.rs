@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::config::Config;
 use crate::ssh_key::SshIdentity;
 use crate::handshake::HeartbeatClient;
-use crate::api::{SendMessageRequest, SendMessageResponse};
+use crate::api::SendMessageResponse;
 use crate::ui::{AppState, Screen};
 use axum::{
     extract::Json,
@@ -91,18 +91,33 @@ impl Server {
                 .route("/send-message", post(handle_send_message))
                 .with_state(message_queue);
 
-            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await.ok();
-            if let Some(l) = listener {
-                let _ = axum::serve(l, app).await;
+            match std::net::TcpListener::bind(format!("0.0.0.0:{}", port)) {
+                Ok(std_listener) => {
+                    std_listener.set_nonblocking(true).ok();
+
+                    let tokio_listener = tokio::net::TcpListener::from_std(std_listener).ok();
+                    if let Some(listener) = tokio_listener {
+                        let _ = axum::serve(listener, app).await;
+                    }
+                }
+                Err(_) => {}
             }
         });
 
         // Give server time to start
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        println!("✅ API Ready - Now showing chat...\n");
+        println!("✅ API Ready - Listening on 0.0.0.0:{}\n", self.port);
 
-        // Run TUI in main task
-        self.run_tui().await?;
+        // Try to run TUI, but keep server running if it fails
+        if let Err(e) = self.run_tui().await {
+            println!("[WARN] TUI failed: {} - server will continue running", e);
+            println!("[INFO] API endpoint available at http://localhost:{}/send-message", self.port);
+
+            // Keep the server running indefinitely
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+            }
+        }
 
         Ok(())
     }
@@ -155,12 +170,17 @@ impl Server {
 
 async fn handle_send_message(
     axum::extract::State(queue): axum::extract::State<MessageQueue>,
-    Json(payload): Json<SendMessageRequest>,
+    Json(payload): Json<serde_json::Value>,
 ) -> Json<SendMessageResponse> {
-    let message = format!("{}: {}",
-        payload.from_hash.unwrap_or_else(|| "guest".to_string()),
-        payload.content
-    );
+    let from_hash = payload.get("from_hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or("guest");
+
+    let content = payload.get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(empty)");
+
+    let message = format!("{}: {}", from_hash, content);
     queue.add(message).await;
 
     Json(SendMessageResponse::success("msg_123".to_string()))

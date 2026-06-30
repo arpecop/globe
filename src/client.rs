@@ -8,8 +8,65 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use std::io;
+use std::time::Instant;
 use crate::ui::AppState;
 use crate::ssh_key::{SshIdentity, NicknameDatabase};
+
+struct RelayClient {
+    relay_url: String,
+    peer_hash: String,
+}
+
+impl RelayClient {
+    fn new(relay_url: String, peer_hash: String) -> Self {
+        Self { relay_url, peer_hash }
+    }
+
+    async fn send_message(&self, content: String) -> Result<()> {
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/send-message", self.relay_url);
+
+        let payload = serde_json::json!({
+            "content": content,
+            "from_hash": self.peer_hash,
+        });
+
+        let _ = client.post(&url)
+            .json(&payload)
+            .send()
+            .await;
+
+        Ok(())
+    }
+
+    async fn fetch_messages(&self) -> Result<Vec<(String, String)>> {
+        let client = reqwest::Client::new();
+        let url = format!("http://{}/messages", self.relay_url);
+
+        match client.get(&url).send().await {
+            Ok(resp) => {
+                if let Ok(text) = resp.text().await {
+                    // Parse simple format: "0xhash: message\n0xhash: message\n"
+                    let messages = text.lines()
+                        .filter_map(|line| {
+                            if let Some(pos) = line.find(": ") {
+                                let from = line[..pos].to_string();
+                                let content = line[pos + 2..].to_string();
+                                Some((from, content))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    Ok(messages)
+                } else {
+                    Ok(Vec::new())
+                }
+            }
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+}
 
 pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
     let nickname = nickname.unwrap_or_else(|| "User".to_string());
@@ -33,74 +90,68 @@ pub async fn run(connect: &str, nickname: Option<String>) -> Result<()> {
         }
     };
 
-    // Load nickname database (stores local mapping)
     let db = NicknameDatabase::new()?;
     db.set(&peer_hash, &nickname)?;
 
-    println!("✅ Ready!");
+    println!("✅ Connected!");
     println!("👤 Your name: {}", nickname);
+    println!("📍 Relay: {}", connect);
     println!("📺 Starting Globy...\n");
 
-    // Setup terminal
     enable_raw_mode()?;
     let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Initialize app state
-    let mut state = AppState::new(nickname, peer_hash);
+    let mut state = AppState::new(nickname, peer_hash.clone());
+    state.start_as_host(); // Auto-enter chat mode
 
-    // Add some demo messages
-    state.add_message("0xabcd".to_string(), "Welcome to Globy!".to_string());
-    state.add_message("0x5a2f".to_string(), "Hello everyone".to_string());
+    let relay = RelayClient::new(connect.to_string(), peer_hash.clone());
+    let mut last_fetch = Instant::now();
+    let mut seen_messages = std::collections::HashSet::new();
 
-    // Main event loop
     loop {
+        // Fetch new messages every 500ms
+        if last_fetch.elapsed().as_millis() > 500 {
+            if let Ok(messages) = relay.fetch_messages().await {
+                for (from, content) in messages {
+                    let key = format!("{}:{}", from, content);
+                    if !seen_messages.contains(&key) {
+                        seen_messages.insert(key);
+                        state.add_message(from, content);
+                    }
+                }
+            }
+            last_fetch = Instant::now();
+        }
+
         terminal.draw(|f| crate::ui::draw_ui(f, &state))?;
 
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                match state.screen {
-                    crate::ui::Screen::PeerSelection => {
-                        match key.code {
-                            KeyCode::Esc => {
-                                // Esc = start as HOST (wait for guests)
-                                state.start_as_host();
-                            }
-                            KeyCode::Enter => {
-                                // Enter = connect as GUEST (if peer entered)
-                                state.confirm_peer();
-                            }
-                            KeyCode::Backspace => state.peer_input_backspace(),
-                            KeyCode::Delete => state.peer_input_delete(),
-                            KeyCode::Left => state.peer_input_left(),
-                            KeyCode::Right => state.peer_input_right(),
-                            KeyCode::Char(c) => state.peer_input_char(c),
-                            _ => {}
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Enter => {
+                        if !state.input.is_empty() {
+                            let msg = state.input.clone();
+                            state.add_message(peer_hash.clone(), msg.clone());
+                            let _ = relay.send_message(msg).await;
+                            state.input.clear();
+                            state.input_cursor = 0;
                         }
                     }
-                    crate::ui::Screen::Chat => {
-                        match key.code {
-                            KeyCode::Esc => state.back_to_peers(),
-                            KeyCode::Enter => state.send_message(),
-                            KeyCode::Backspace => state.handle_backspace(),
-                            KeyCode::Delete => state.handle_delete(),
-                            KeyCode::Left => state.move_cursor_left(),
-                            KeyCode::Right => state.move_cursor_right(),
-                            KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.next_channel(),
-                            KeyCode::Down if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => state.prev_channel(),
-                            KeyCode::Char(c) => state.handle_input(c),
-                            _ => {}
-                        }
-                    }
+                    KeyCode::Backspace => state.handle_backspace(),
+                    KeyCode::Delete => state.handle_delete(),
+                    KeyCode::Left => state.move_cursor_left(),
+                    KeyCode::Right => state.move_cursor_right(),
+                    KeyCode::Char(c) => state.handle_input(c),
+                    _ => {}
                 }
             }
         }
     }
 
-    // Restore terminal
     disable_raw_mode()?;
-
     println!("✅ Goodbye!");
 
     Ok(())
