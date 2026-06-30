@@ -49,6 +49,9 @@ dashmap = "5"
 # For machine ID
 machine-id = "0.3"
 signature = "3.0.0"
+russh = "0.61.2"
+russh-keys = "0.49.2"
+tokio-io-timeout = "1.2.1"
 
 [[bin]]
 name = "globy"

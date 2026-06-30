@@ -26,7 +26,9 @@ use std::io;
 
 #[derive(Clone, Debug)]
 pub struct Message {
+    pub id: String,
     pub from_hash: String,
+    pub to_hash: String,
     pub nickname: String,
     pub content: String,
     pub timestamp: u64,
@@ -47,7 +49,7 @@ impl MessageQueue {
     pub async fn add(&self, message: Message) {
         let mut msgs = self.messages.lock().await;
         msgs.push_back(message);
-        if msgs.len() > 100 {
+        if msgs.len() > 1000 {
             msgs.pop_front();
         }
     }
@@ -55,6 +57,21 @@ impl MessageQueue {
     pub async fn get_all(&self) -> Vec<Message> {
         let msgs = self.messages.lock().await;
         msgs.iter().cloned().collect()
+    }
+
+    /// Get messages for a specific recipient (for relay polling)
+    pub async fn get_for_recipient(&self, to_hash: &str) -> Vec<Message> {
+        let msgs = self.messages.lock().await;
+        msgs.iter()
+            .filter(|m| m.to_hash == to_hash)
+            .cloned()
+            .collect()
+    }
+
+    /// Delete message after delivery
+    pub async fn delete(&self, message_id: &str) {
+        let mut msgs = self.messages.lock().await;
+        msgs.retain(|m| m.id != message_id);
     }
 }
 
@@ -225,16 +242,20 @@ async fn handle_send_message(
         .unwrap_or_else(|| chrono::Utc::now().timestamp() as u64);
 
     // Step 6: Add to queue
+    let message_id = uuid::Uuid::new_v4().to_string();
     let message = Message {
+        id: message_id.clone(),
         from_hash: payload.from_hash.clone(),
+        to_hash: payload.to_hash.clone(),
         nickname,
         content,
         timestamp,
     };
     queue.add(message).await;
 
-    Ok(Json(SendMessageResponse::success("msg_123".to_string())))
+    Ok(Json(SendMessageResponse::success(message_id)))
 }
+
 
 pub async fn run(config: Config, port: u16, nickname: String) -> Result<()> {
     let identity = SshIdentity::new()?;
