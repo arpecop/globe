@@ -48,6 +48,7 @@ dashmap = "5"
 
 # For machine ID
 machine-id = "0.3"
+signature = "3.0.0"
 
 [[bin]]
 name = "globy"
