@@ -2,12 +2,14 @@ use anyhow::Result;
 use crate::config::Config;
 use crate::ssh_key::SshIdentity;
 use crate::handshake::HeartbeatClient;
-use crate::api::SendMessageResponse;
-use crate::ui::{AppState, Screen};
+use crate::api::{SendMessageResponse, EncryptedMessageRequest};
+use crate::crypto::MessageEncryption;
+use crate::ui::{AppState};
 use axum::{
     extract::Json,
     routing::post,
     Router,
+    http::StatusCode,
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -22,9 +24,17 @@ use crossterm::{
 };
 use std::io;
 
+#[derive(Clone, Debug)]
+pub struct Message {
+    pub from_hash: String,
+    pub nickname: String,
+    pub content: String,
+    pub timestamp: u64,
+}
+
 #[derive(Clone)]
 pub struct MessageQueue {
-    messages: Arc<Mutex<VecDeque<String>>>,
+    messages: Arc<Mutex<VecDeque<Message>>>,
 }
 
 impl MessageQueue {
@@ -34,7 +44,7 @@ impl MessageQueue {
         }
     }
 
-    pub async fn add(&self, message: String) {
+    pub async fn add(&self, message: Message) {
         let mut msgs = self.messages.lock().await;
         msgs.push_back(message);
         if msgs.len() > 100 {
@@ -42,7 +52,7 @@ impl MessageQueue {
         }
     }
 
-    pub async fn get_all(&self) -> Vec<String> {
+    pub async fn get_all(&self) -> Vec<Message> {
         let msgs = self.messages.lock().await;
         msgs.iter().cloned().collect()
     }
@@ -138,14 +148,7 @@ impl Server {
             let all_messages = self.message_queue.get_all().await;
             state.messages.clear();
             for msg in all_messages {
-                // Parse "0xabcd: hello" format
-                if let Some(pos) = msg.find(": ") {
-                    let from = msg[..pos].to_string();
-                    let content = msg[pos + 2..].to_string();
-                    state.add_message(from, content);
-                } else {
-                    state.add_message("0x????".to_string(), msg);
-                }
+                state.add_message(msg.from_hash.clone(), format!("{}: {}", msg.nickname, msg.content));
             }
 
             terminal.draw(|f| crate::ui::draw_ui(f, &state))?;
@@ -170,20 +173,67 @@ impl Server {
 
 async fn handle_send_message(
     axum::extract::State(queue): axum::extract::State<MessageQueue>,
-    Json(payload): Json<serde_json::Value>,
-) -> Json<SendMessageResponse> {
-    let from_hash = payload.get("from_hash")
-        .and_then(|v| v.as_str())
-        .unwrap_or("guest");
+    Json(payload): Json<EncryptedMessageRequest>,
+) -> Result<Json<SendMessageResponse>, (StatusCode, String)> {
+    // Step 1: Load our X25519 private key
+    let identity = SshIdentity::new()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load identity: {}", e)))?;
 
-    let content = payload.get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("(empty)");
+    let our_x25519_private = identity.get_x25519_private_key()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load X25519 key: {}", e)))?;
 
-    let message = format!("{}: {}", from_hash, content);
+    // Step 2: Verify SSH signature
+    let message_to_verify = format!("{}||{}||{}", payload.to_hash, payload.ephemeral_pubkey, payload.ciphertext);
+    let signature_valid = identity.verify_ssh_signature(&message_to_verify, &payload.signature, &payload.ssh_pubkey)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Signature verification error: {}", e)))?;
+
+    if !signature_valid {
+        return Err((StatusCode::UNAUTHORIZED, "Invalid SSH signature".to_string()));
+    }
+
+    // Step 3: Derive shared secret
+    let shared_secret = MessageEncryption::derive_shared_secret(
+        &our_x25519_private,
+        &payload.ephemeral_pubkey,
+    ).map_err(|e| (StatusCode::BAD_REQUEST, format!("Failed to derive shared secret: {}", e)))?;
+
+    // Step 4: Decrypt the message
+    let plaintext = MessageEncryption::decrypt(
+        &payload.ciphertext,
+        &payload.nonce,
+        &payload.tag,
+        &shared_secret,
+        &format!("{}|{}", payload.from_hash, payload.to_hash),
+    ).map_err(|e| (StatusCode::BAD_REQUEST, format!("Decryption failed: {}", e)))?;
+
+    // Step 5: Parse the decrypted message
+    let decrypted_msg: serde_json::Value = serde_json::from_str(&plaintext)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid message format: {}", e)))?;
+
+    let nickname = decrypted_msg.get("nickname")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    let content = decrypted_msg.get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(empty message)")
+        .to_string();
+
+    let timestamp = decrypted_msg.get("timestamp")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| chrono::Utc::now().timestamp() as u64);
+
+    // Step 6: Add to queue
+    let message = Message {
+        from_hash: payload.from_hash.clone(),
+        nickname,
+        content,
+        timestamp,
+    };
     queue.add(message).await;
 
-    Json(SendMessageResponse::success("msg_123".to_string()))
+    Ok(Json(SendMessageResponse::success("msg_123".to_string())))
 }
 
 pub async fn run(config: Config, port: u16, nickname: String) -> Result<()> {

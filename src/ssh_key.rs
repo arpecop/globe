@@ -2,7 +2,9 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::fs;
 use sha2::{Sha256, Digest};
-use hex::encode;
+use hex::{encode, decode};
+use x25519_dalek::x25519;
+use rand::RngCore;
 
 /// SSH key identity management
 /// Uses existing SSH keys (~/.ssh/id_ed25519) for peer identity
@@ -54,12 +56,61 @@ impl SshIdentity {
         &self.priv_key_path
     }
 
-    /// Verify a message was signed by this key
-    /// In real implementation, use ssh-keygen or ed25519-dalek
-    pub fn verify_signature(&self, _message: &str, _signature: &str) -> Result<bool> {
-        // TODO: Implement SSH signature verification
-        // For now, return true (placeholder)
-        Ok(true)
+    /// Get or generate X25519 private key for this peer
+    /// Stores in ~/.globy/x25519_private.key
+    pub fn get_x25519_private_key(&self) -> Result<[u8; 32]> {
+        let home = std::env::var("HOME")?;
+        let globy_dir = PathBuf::from(&home).join(".globy");
+        fs::create_dir_all(&globy_dir)?;
+        let key_file = globy_dir.join("x25519_private.key");
+
+        if key_file.exists() {
+            let hex_content = fs::read_to_string(&key_file)?;
+            let bytes = decode(hex_content.trim())?;
+            if bytes.len() != 32 {
+                anyhow::bail!("X25519 key must be 32 bytes");
+            }
+            let mut key = [0u8; 32];
+            key.copy_from_slice(&bytes);
+            Ok(key)
+        } else {
+            // Generate new key
+            let mut key = [0u8; 32];
+            rand::thread_rng().fill_bytes(&mut key);
+            fs::write(&key_file, encode(&key))?;
+            Ok(key)
+        }
+    }
+
+    /// Get X25519 public key (derived from private key)
+    pub fn get_x25519_public_key(&self) -> Result<String> {
+        let private_key = self.get_x25519_private_key()?;
+        const X25519_BASEPOINT: [u8; 32] = [
+            9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let public_key = x25519(private_key, X25519_BASEPOINT);
+        Ok(encode(&public_key))
+    }
+
+    /// Verify an SSH signature
+    /// Message should be in format: to_hash||ephemeral_pubkey||ciphertext
+    /// This is a stub - real implementation would use ed25519 verification
+    pub fn verify_ssh_signature(&self, message: &str, signature: &str, ssh_pubkey: &str) -> Result<bool> {
+        // For now, verify the SSH pubkey matches our stored public key
+        let our_pubkey = self.get_public_key()?;
+        let our_key_part = our_pubkey.trim();
+        let their_key_part = ssh_pubkey.trim();
+
+        // Check if the public key matches
+        if our_key_part != their_key_part {
+            return Ok(false);
+        }
+
+        // TODO: Implement actual SSH signature verification using ed25519-dalek
+        // For now, we trust that the signature is valid if the key matches
+        // In production, use: ed25519_dalek::PublicKey::verify()
+        Ok(!signature.is_empty()) // At least check signature is not empty
     }
 }
 
